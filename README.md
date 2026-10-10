@@ -4,7 +4,9 @@ Pac-Man played by a **local, on-device decision model** through Ollama's `/v1/sy
 
 로컬 Ollama 의사결정모델(`/v1/systemone`)이 팩맨을 조종하고, 우측 패널에 모델 입력(state/questions)과 출력(choice, 확률, confidence, 지연시간)을 실시간으로 보여주는 웹앱.
 
-![screenshot](docs/screenshot.png)
+![demo](docs/demo.gif)
+
+<sub>`tev1:4b` on Apple M4 / 16GB, played back at 2x. Each decision takes about 1 s, and the game pauses while the model thinks (lock-step). / 2배속 재생, 결정당 약 1초.</sub>
 
 ## 요구 사항
 

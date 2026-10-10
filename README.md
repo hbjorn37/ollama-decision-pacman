@@ -90,6 +90,12 @@ Headless runs with 80 decisions per model through the real endpoint, on the mach
 
 Ghosts are partly random, so scores come from a single game each and are only indicative. `tev1:0.8b` is fast but barely eats any pellets in 80 decisions; it is effectively not making useful choices.
 
+### Fast vs. smart: `tev1:0.8b` at real-time speed
+
+![tev1:0.8b demo](docs/demo-tev1-0.8b.gif)
+
+<sub>`tev1:0.8b` on the same Mac mini, played back at **1x (real time)**. About 210 ms per decision, so the game barely pauses. But the answers are close to uniform: here `up`/`down`/`right` get 37% / 37% / 26% with 1.3% confidence. Pac-Man doubles back over the same corridor and loses a life within 22 seconds. Compare this with the 2x-speed `tev1:4b` demo at the top: slower per decision, far better choices.</sub>
+
 ## The limits of a 16 GB M4 Mac mini
 
 This project works on a base M4 Mac mini, but it is clearly at the edge of what this machine can do:

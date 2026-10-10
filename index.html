@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Decision Model Pac-Man</title>
+  <link rel="icon" href="data:," />
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+  <main>
+    <section class="stage">
+      <canvas id="game"></canvas>
+      <p class="hint">Space: 일시정지 · N: 한 스텝 · R: 리셋 · 키보드 모드에서는 방향키로 조작</p>
+    </section>
+
+    <aside class="panel">
+      <div class="controls">
+        <label>Model
+          <select id="model"></select>
+        </label>
+        <label>Mode
+          <select id="mode">
+            <option value="ai">AI (decision model)</option>
+            <option value="keyboard">Keyboard</option>
+          </select>
+        </label>
+        <div class="buttons">
+          <button id="play">Pause</button>
+          <button id="step">Step</button>
+          <button id="reset">Reset</button>
+        </div>
+        <label>Tick <span id="speedVal"></span>
+          <input id="speed" type="range" min="60" max="400" step="10" value="140" />
+        </label>
+        <label>Ghost smartness <span id="smartVal"></span>
+          <input id="smart" type="range" min="0" max="1" step="0.05" value="0.7" />
+        </label>
+      </div>
+
+      <div class="stats">
+        <div><span>Decisions</span><b id="sDecisions">0</b></div>
+        <div><span>Last</span><b id="sLast">–</b></div>
+        <div><span>Avg</span><b id="sAvg">–</b></div>
+        <div><span>p50 / p95</span><b id="sPct">–</b></div>
+        <div><span>Fallbacks</span><b id="sFallback">0</b></div>
+      </div>
+
+      <h2>Input <small id="inMove"></small></h2>
+      <div class="box">
+        <div id="inSituation" class="situation">Waiting for first decision…</div>
+        <div class="input-grid">
+          <pre id="inMap" class="map"></pre>
+          <table id="inCriteria" class="criteria"></table>
+        </div>
+        <details>
+          <summary>Request JSON</summary>
+          <pre id="inRaw" class="raw"></pre>
+        </details>
+      </div>
+
+      <h2>Output <small id="outMeta"></small></h2>
+      <div class="box">
+        <div id="outBars" class="bars"></div>
+        <div class="out-row">
+          <div><span>choice</span><b id="outChoice">–</b></div>
+          <div><span>confidence</span><b id="outConf">–</b></div>
+          <div><span>danger (noul)</span><b id="outDanger">–</b></div>
+        </div>
+        <div id="outError" class="error" hidden></div>
+        <details>
+          <summary>Response JSON</summary>
+          <pre id="outRaw" class="raw"></pre>
+        </details>
+      </div>
+
+      <h2>History</h2>
+      <div class="box history">
+        <table>
+          <thead><tr><th>#</th><th>pos</th><th>choice</th><th>p</th><th>ms</th><th>event</th></tr></thead>
+          <tbody id="history"></tbody>
+        </table>
+      </div>
+    </aside>
+  </main>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

@@ -1,62 +1,125 @@
 # ollama-decision-pacman
 
-Pac-Man played by a **local, on-device decision model** through Ollama's `/v1/systemone` (Jev-style) API. The right-hand panel shows every request (`state` + typed `questions`) and response (choice, probabilities, confidence, latency) live.
+Pac-Man played by a **local, on-device decision model** through Ollama's `/v1/systemone` (Jev-style) API. A live panel on the right shows every request the model receives (`state` + typed `questions`) and every answer it returns (choice, per-option probabilities, confidence, latency).
 
-로컬 Ollama 의사결정모델(`/v1/systemone`)이 팩맨을 조종하고, 우측 패널에 모델 입력(state/questions)과 출력(choice, 확률, confidence, 지연시간)을 실시간으로 보여주는 웹앱.
+No cloud, no API key: the game, the model and the inference all run on one desktop machine.
 
 ![demo](docs/demo.gif)
 
-<sub>`tev1:4b` on Apple M4 / 16GB, played back at 2x. Each decision takes about 1 s, and the game pauses while the model thinks (lock-step). / 2배속 재생, 결정당 약 1초.</sub>
+<sub>`tev1:4b` on a Mac mini (M4, 16 GB), played back at **2x speed**. Each decision takes about 1 s on this machine. The game pauses while the model thinks (lock-step), so latency never changes the outcome.</sub>
 
-## 요구 사항
+## Test environment
 
-- [Ollama](https://ollama.com) 0.35.1 이상 (`/v1/systemone` 지원)
-- Node.js 20 이상
-- 의사결정모델 하나 이상: `tev1`, `nimble`, `clef-flash` 등
+Everything in this repo was built and measured on this machine:
 
-## 실행
+| | |
+|---|---|
+| Machine | Mac mini (Mac16,10) |
+| Chip | Apple M4, 10-core CPU (4 performance + 6 efficiency) |
+| Memory | 16 GB unified memory |
+| OS | macOS 26.6 |
+| Ollama | 0.40.2 |
+| Node.js | 24.21 |
+
+## Requirements
+
+- [Ollama](https://ollama.com) 0.35.1 or newer (provides `/v1/systemone`)
+- Node.js 20 or newer
+- At least one decision model: `tev1`, `nimble`, `clef-flash`, …
+
+## Quick start
 
 ```bash
-ollama pull tev1:4b        # 기본 모델 (또는 nimble, tev1:0.8b, clef-flash)
+ollama pull tev1:4b        # default model (alternatives: nimble, tev1:0.8b, clef-flash)
 npm install
 npm run dev                # http://localhost:5173
 ```
 
-Vite dev server가 `/v1`, `/api`를 `localhost:11434`로 프록시하므로 별도 백엔드가 없다. (`OLLAMA_HOST`로 변경 가능)
+The Vite dev server proxies `/v1` and `/api` to `localhost:11434`, so there is no backend to run. Set `OLLAMA_HOST` to point at another Ollama server.
 
-조작: Space 일시정지 · N 한 스텝 · R 리셋 · Mode를 Keyboard로 바꾸면 방향키로 플레이.
+Controls: `Space` pause · `N` single step · `R` reset · switch **Mode** to *Keyboard* to play with the arrow keys. The model picker also contains `heuristic (no model)`, a rule-based baseline for comparison.
 
-## 동작 방식
+## How it works
 
-- **lock-step**: 팩맨이 교차로/코너/막힘/근접 유령 상황일 때만 모델에 묻고, 응답이 올 때까지 게임을 멈춘다. 그래서 지연시간이 게임 결과에 영향을 주지 않는다.
-- **입력**: `state` = 상황 요약 + 11×11 ASCII 맵. `move`(choice)의 criteria에 *갈 수 있는 방향만* 넣고, 방향별로 BFS로 미리 계산한 사실(가장 가까운 펠릿, 유령 거리, 파워펠릿 등)을 설명으로 넣는다. `danger`(noul)는 표시용.
-- **실패 처리**: 타임아웃(20s), 오류, 잘못된 choice가 나오면 규칙 기반 heuristic으로 대체한다 (패널에 빨간색으로 표시). 모델 목록의 `heuristic (no model)`은 비교용 베이스라인.
+- **Lock-step loop.** Pac-Man only asks the model at junctions, corners, dead ends, or when a ghost is closing in along a corridor. The simulation pauses until the answer arrives. One request is in flight at a time.
+- **Facts go in the criteria, not the map.** Decision models are classifiers, not path planners. The `move` question is a `choice` whose options are *only the legal directions*. Each option's description carries facts precomputed with BFS: distance to the nearest pellet, pellets nearby, distance to the nearest ghost, power pellets, and edible ghosts. `state` holds a short situation summary and an 11×11 ASCII view.
+- **Display-only signal.** A `noul` question (`danger`) is shown in the panel but does not drive behavior.
+- **Failure handling.** On timeout (20 s), error, or an invalid choice, the game falls back to the heuristic and marks the row red in the history.
 
-| 파일 | 역할 |
+Example request (trimmed):
+
+```json
+{
+  "model": "tev1:4b",
+  "state": {
+    "situation": "Pac-Man is at column 6, row 5, heading right. Score 530, 3 lives, 195 pellets left.",
+    "map": "Legend: # wall, . pellet, o power pellet, P Pac-Man, G ghost, b edible ghost.\n..."
+  },
+  "questions": {
+    "move": {
+      "type": "choice",
+      "instructions": "Which direction should Pac-Man move? Never move toward a nearby dangerous ghost. ...",
+      "criteria": {
+        "up": "nearest pellet 5 tiles away, 4 pellets within 8 tiles, no dangerous ghost this way",
+        "right": "nearest pellet 1 tile away, 15 pellets within 8 tiles, caution: ghost Blinky 6 tiles away"
+      }
+    },
+    "danger": { "type": "noul", "instructions": "Is a dangerous ghost within 3 tiles of Pac-Man?" }
+  }
+}
+```
+
+| File | Role |
 |---|---|
-| `src/maze.ts` | 28×31 타일맵, 이동 유틸 |
-| `src/game.ts` | 게임 상태, 틱, 충돌, 결정 시점 판단(`needsDecision`) |
-| `src/ghosts.ts` | 유령 AI (타겟팅 + 랜덤, smartness 슬라이더) |
-| `src/features.ts` | 방향별 특징 → 요청 JSON 생성, heuristic |
-| `src/decision.ts` | `/v1/systemone` 클라이언트 |
-| `src/render.ts`, `src/panel.ts`, `src/main.ts` | 캔버스, 우측 패널, 루프 |
+| `src/maze.ts` | 28×31 tile map and movement helpers |
+| `src/game.ts` | Game state, tick, collisions, when to ask (`needsDecision`) |
+| `src/ghosts.ts` | Ghost AI (targeting + randomness, "smartness" slider) |
+| `src/features.ts` | Per-direction features, request builder, heuristic |
+| `src/decision.ts` | `/v1/systemone` client |
+| `src/render.ts`, `src/panel.ts`, `src/main.ts` | Canvas, live panel, main loop |
 
-## 측정 결과 (Apple M4 / 16GB, 헤드리스 80결정, 2026-10-10)
+## Benchmarks
 
-| 모델 | p50 | p95 | heuristic 일치율 | 점수(1판) | 메모리(ollama ps) |
+Headless runs with 80 decisions per model through the real endpoint, on the machine above (2026-10-10). The first, model-loading request is excluded from latency.
+
+| Model | p50 | p95 | Agrees with heuristic | Score (1 game) | Memory (`ollama ps`) |
 |---|---|---|---|---|---|
 | tev1:0.8b | 176 ms | 216 ms | 20% | 450 | 6.8 GB |
-| **tev1:4b** (기본) | 1013 ms | 1324 ms | 81% | 3220 | 12 GB |
-| nimble (9B) | 2293 ms | 3500 ms | 73% | 2210 | 17 GB (측정 중 시스템 여유 메모리 11%) |
+| **tev1:4b** (default) | 1013 ms | 1324 ms | 81% | 3220 | 12 GB |
+| nimble (9B) | 2293 ms | 3500 ms | 73% | 2210 | 17 GB (system free memory dropped to 11%) |
 
-점수는 유령이 랜덤이라 1판 기준 참고치다. tev1:0.8b는 80번 결정 동안 펠릿을 거의 먹지 못해, 사실상 판단을 못 하고 있는 것으로 보인다.
+Ghosts are partly random, so scores come from a single game each and are only indicative. `tev1:0.8b` is fast but barely eats any pellets in 80 decisions; it is effectively not making useful choices.
 
-블로그의 91ms(nimble)는 M5 Max 기준이다. 16GB 머신에서는 tev1:4b가 속도와 판단력의 균형이 가장 좋다. 다른 모델(qwen2.5:14b 등)이 메모리에 같이 올라가 있지 않게 `ollama ps`/`ollama stop`으로 확인할 것.
+## The limits of a 16 GB M4 Mac mini
 
-## 참고
+This project works on a base M4 Mac mini, but it is clearly at the edge of what this machine can do:
 
-- 영감: [Ollama now supports Jev-style decision models](https://ollama.com/blog/ollama-now-supports-jev-style-decision-models)
-- 비공식 팬 프로젝트이며, PAC-MAN 상표권자(Bandai Namco)와 관련이 없다. 미로와 그래픽은 이 저장소에서 새로 작성했다.
+- **About 1 second per decision** with the best practical model (`tev1:4b`). Real-time play, where the model decides on every 140 ms game tick, is not possible. The lock-step design exists only to hide that.
+- **9B models do not fit comfortably.** `nimble` runs, but at about 2.3 s per decision. `ollama ps` reported 17 GB, more than the machine's physical memory, and free system memory fell to 11% during the run.
+- **`clef-flash` (11–12 GB) was not tested.** With macOS, a browser and the dev server also running, it leaves no realistic headroom on 16 GB.
+- **Small models are fast but not smart enough.** `tev1:0.8b` hits real-time latency (~176 ms) but its choices are close to useless here.
+- **Memory hygiene matters.** Ollama keeps a model loaded for 5 minutes after the last request. Run `ollama ps` and `ollama stop <model>` so that two models are never resident at once.
+
+For reference, Ollama's announcement reports **~91 ms per decision for `nimble` on an M5 Max MacBook Pro**: roughly 25× faster than the same model on this machine, and fast enough to play in real time.
+
+## Looking ahead
+
+The gap between "works with a pause" and "plays in real time" is mostly hardware and model size, and both are moving quickly.
+
+High-end Apple silicon already reaches sub-100 ms decisions for a 9B decision model today. As future generations (M6 and beyond) and other local AI hardware bring more memory bandwidth and larger unified memory to everyday desktops and laptops, and as decision models become smaller and better distilled, we expect this kind of loop to run comfortably on-device, even on entry-level machines: a model reading structured state and making a typed decision in tens of milliseconds, privately and at no per-call cost.
+
+Pac-Man is a toy, but the pattern is the same one behind real-time game agents, UI automation, routing and moderation. This repo is meant as a small, honest data point for where that pattern stands on today's entry-level hardware.
+
+## Troubleshooting
+
+- **"no decision model installed"**: run `ollama pull tev1:4b`. Only models whose names contain `tev1`, `nimble` or `clef` are listed.
+- **The first decision takes several seconds**: that is the model loading into memory. Later decisions are faster.
+- **Memory stays full after closing the game**: the model is still loaded. Run `ollama stop <model>`, or wait 5 minutes.
+
+## Credits
+
+- Inspired by [Ollama now supports Jev-style decision models](https://ollama.com/blog/ollama-now-supports-jev-style-decision-models).
+- This is an unofficial fan project and is not affiliated with or endorsed by Bandai Namco, owner of the PAC-MAN trademark. The maze and graphics were written from scratch for this repository.
 
 ## License
 
